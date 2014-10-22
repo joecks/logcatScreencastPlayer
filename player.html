@@ -1,0 +1,173 @@
+<html>
+ <head>
+  <title>Logcat player</title>
+  <script src="http://code.jquery.com/jquery-latest.min.js" type="text/javascript"></script>
+  <script src="http://cdnjs.cloudflare.com/ajax/libs/jquery-dateFormat/1.0/jquery.dateFormat.min.js" type="text/javascript"></script>
+ </head>
+ <body>
+  <p>
+    <h3>Use logcat -v time </h3>
+    <p>
+      use: video=VIDEO_URL, logcat=LOGCAT_URL<br>
+      and enable chrome --allow-file-access-from-files if ypu like to load local files (dev only)
+    </p>
+    <small>Tested on Chrome</small>
+  </p>
+  <p>
+    Jump To:
+    <input type="text" id="seek_to_time"/>
+    Current Time:
+    <input type="text" id="current_time"/>
+  </p>
+  <div style="float:left">
+    <video style="vertical-align: top" id="current_video" class="video-js" width="600" height="800" controls="controls" preload="auto">
+      <source src="" type='video/webm; codecs="vp8, vorbis"' />
+    </video>
+    <textarea name="TextArea" id="logcat" readonly rows="50" cols="150" width="100%" title="Paste text here" wrap="off"></textarea>
+  </div>
+  <div style="float:left">
+    <p>
+      Logcat offset (i.e.10-20 20:38:27.780)
+      <input type="text" id="logcat_offset"/>
+      Searching For:
+      <input type="text" id="search_string"/>
+    </p>
+  </div>
+  <script>
+    var dates = []
+    var video = $("#current_video")[0];
+    var default_offset = -1;
+    $("#current_video").on(
+      "timeupdate", 
+      function(event){
+        $("#current_time").val(this.currentTime);
+        var user_offset = $("#logcat_offset")[0].value;
+        var offset = dateFromString(user_offset).getTime();
+        if (user_offset == "") {
+          offset = default_offset;
+        }
+        var time = offset + (this.currentTime*1000);
+        //'M-dd HH:mm:ss:SSS'
+        var str_date = $.format.date(new Date(time), 'M-dd HH:mm:ss:SSS')
+        $("#search_string").val(str_date);
+        var logcat = $("#logcat")[0];
+        var line = findLine(logcat,time);
+        if (line >= 0) {
+          selectTextareaLine(logcat,line);
+        }
+    });
+
+    $("#seek_to_time").keypress(
+      function() {
+        video.currentTime = $("#seek_to_time").val();
+      }
+    );
+
+    $("#logcat").change(
+      function(){
+        dates = [];
+        var lines = $("#logcat").val().split('\n');
+        for(var i = 0;i < lines.length;i++){
+          var m = lines[i].match(/(\d+)-(\d+)\s+(\d+):(\d+):(\d+)\.(\d+)\s+.*/);
+          if (m != null) {
+            var date = new Date(2014, +m[1] -1, +m[2], +m[3], +m[4], +m[5], +m[6]);
+            dates.push(date.getTime());
+            if (lines[i].match("setStartTimestampUs:") && default_offset == -1){
+              default_offset = date.getTime();
+            }
+          } else {
+            dates.push(-1);
+          }
+        }
+      }
+    );
+
+    function findLine(tarea, date_in_msec) {
+      lastDate = null;
+      for(var i = 0;i < dates.length;i++){
+        if (dates[i] > date_in_msec){
+          return i == 0 ? 0 : i -1;
+        }
+      }
+    }
+
+    function selectTextareaLine(tarea,lineNum) {
+      var lines = tarea.value.split("\n");
+
+      // calculate start/end
+      var startPos = 0, endPos = tarea.value.length;
+      for(var x = 0; x < lines.length; x++) {
+          if(x == lineNum) {
+              break;
+          }
+          startPos += (lines[x].length+1);
+
+      }
+
+      var endPos = lines[lineNum].length+startPos;
+
+      // do selection
+      // Chrome / Firefox
+      var lineHeight = tarea.clientHeight / tarea.rows;
+      tarea.scrollTop = (lineHeight * lineNum) - tarea.clientHeight/2;
+
+      if(typeof(tarea.selectionStart) != "undefined") {
+          tarea.selectionStart = startPos;
+          tarea.selectionEnd = endPos;
+          return true;
+      }
+
+      // IE
+      if (document.selection && document.selection.createRange) {
+          tarea.focus();
+          tarea.select();
+          var range = document.selection.createRange();
+          range.collapse(true);
+          range.moveEnd("character", endPos);
+          range.moveStart("character", startPos);
+          range.select();
+          return true;
+      }
+      return false;
+    }
+
+    function dateFromString(str) {
+      if (str == ""){
+        return new Date();
+      }
+      var m = str.match(/(\d+)-(\d+)\s+(\d+):(\d+):(\d+)\.(\d+)/);
+      return new Date(2014, +m[1] -1, +m[2], +m[3], +m[4], +m[5], +m[6]);
+    }
+
+    var QueryString = function () {
+      // This function is anonymous, is executed immediately and 
+      // the return value is assigned to QueryString!
+      var query_string = {};
+      var query = window.location.search.substring(1);
+      var vars = query.split("&");
+      for (var i=0;i<vars.length;i++) {
+        var pair = vars[i].split("=");
+          // If first entry with this name
+        if (typeof query_string[pair[0]] === "undefined") {
+          query_string[pair[0]] = pair[1];
+          // If second entry with this name
+        } else if (typeof query_string[pair[0]] === "string") {
+          var arr = [ query_string[pair[0]], pair[1] ];
+          query_string[pair[0]] = arr;
+          // If third or later entry with this name
+        } else {
+          query_string[pair[0]].push(pair[1]);
+        }
+      } 
+      return query_string;
+    } ();
+
+    $("#current_video")[0].src = QueryString.video;
+    $.get(QueryString.logcat, null, function(data){
+      $("#logcat").val(data);
+      $("#logcat").trigger("change")
+    });
+  </script>
+  
+ </body>
+</html>
